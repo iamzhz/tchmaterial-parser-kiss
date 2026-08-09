@@ -526,7 +526,7 @@ def set_token_guide():
     rprint(texts['copy_code_guide'])
     token = input().strip()
     while token == '':
-        token = input().strip()
+        token = input('> ').strip()
     print_info(set_access_token(token))
 
 # 获取资源列表
@@ -542,6 +542,7 @@ def get_parse_result_from_input() -> tuple[str, str, str] | tuple[None, None, No
     is_first_input = True
     url = ''
     rprint(Rule(style='white')) # 分界线
+    items = [] # 选择的 option_id 的累计
     while True:
         if 'children' in chosen_dict: # 不是末端节点
             options_dict = {option_data.get('display_name').strip(): option_id for option_id, option_data in chosen_dict['children'].items()}
@@ -549,16 +550,17 @@ def get_parse_result_from_input() -> tuple[str, str, str] | tuple[None, None, No
             resource_data = chosen_dict
             resource_type = resource_data.get("resource_type_code") or "assets_document"
             content_id = resource_data.get("id")
-            #if resource_type == "teachingmaterials":
-            #   url = f"https://basic.smartedu.cn/syncClassroom?defaultTag={"%2F".join(item.split(':')[1:])}"
-            #else:
-            url = f"https://basic.smartedu.cn/tchMaterial/detail?contentType={resource_type}&contentId={content_id}&catalogType=tchMaterial&subCatalog=tchMaterial"
+            if resource_type == "teachingmaterials":
+                url = f"https://basic.smartedu.cn/syncClassroom?defaultTag={"%2F".join(items)}"
+            else:
+                url = f"https://basic.smartedu.cn/tchMaterial/detail?contentType={resource_type}&contentId={content_id}&catalogType=tchMaterial&subCatalog=tchMaterial"
             break
         completer = WordCompleter(options_dict.keys(), ignore_case=True)
         result = prompt(texts['add_item'] if is_first_input else ' > ', completer=completer, complete_style=CompleteStyle.MULTI_COLUMN)
         result = result.strip()
         if result in options_dict:
             chosen_dict = chosen_dict['children'][options_dict[result]]
+            items.append(options_dict[result])
         else:
             if 'basic.smartedu.cn' in result: # 可能是正确的 URL
                 url = result
@@ -578,11 +580,12 @@ def get_parse_result_from_input() -> tuple[str, str, str] | tuple[None, None, No
     return parse(url, is_bookmark)
 
 try:
-    res_data = get_parse_result_from_input()
-    progress.start()
-    task = progress.add_task("[green]Downloading...", total=100)
-    download_file(url=res_data[0], save_path=f'{os.path.expanduser("~")}/Downloads/{res_data[1]}.pdf', chapters=res_data[2])
-    progress.stop()
+    while True:
+        res_data = get_parse_result_from_input()
+        progress.start()
+        task = progress.add_task("[green]Downloading...", total=100)
+        download_file(url=res_data[0], save_path=f'{os.path.expanduser("~")}/Downloads/{res_data[1]}.pdf', chapters=res_data[2])
+        progress.stop()
 except BaseException as e:
     exit_effection()
     print_error(e)
