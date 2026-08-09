@@ -23,22 +23,26 @@ from rich.syntax import Syntax
 from rich.rule import Rule
 
 texts = {
-    'add_item': '在输入区内，你可以\n 1. 直接写下需要解析的 URL; \n 2. 按 Tab 键搜索资源(Enter 键选中)\n 3. 输入 set 来设置 Access Token\n 4. 输入 exit 退出\n> ',
+    'add_item': '在输入区内，你可以\n 1. 直接写下需要解析的 URL; \n 2. 按 Tab 键搜索资源(Enter 键选中)\n 3. 输入 set 来设置 Access Token\n 4. 输入 erase 清除保存的 Access Token\n 5. 输入 exit 退出\n> ',
     'wrong_url_or_res': '输入的不是正确的 URL/资源项, 请重新输入',
     'is_bookmark': '本资源需要添加书签吗？',
     'file_path_is': '文件已下载到',
     'following_failure': '以下文件下载失败',
     'copy_code_guide': '请在用浏览器在 [link=https://auth.smartedu.cn/uias/login]https://auth.smartedu.cn/uias/login[/link] 登录，在控制台输入上面代码得到 Access Token，粘贴到这里',
     'get_res_list_failure': '获取资源列表失败，请重新打开本程序',
+    'ready_to_erase': '确定删除 Access Token 吗？',
+    'erase_success': '已成功删除 Access Token',
 }
 texts_en = {
-    'add_item': 'In the input field, you can\n 1. Directly type the URL to be parsed;\n 2. Press Tab to search for resources (press Enter to select);\n 3. Type "set" to set the Access Token;\n 4. Type "exit" to exit the program\n> ',
+    'add_item': 'In the input field, you can\n 1. Directly type the URL to be parsed;\n 2. Press Tab to search for resources (press Enter to select);\n 3. Type "set" to set the Access Token;\n 4. Type "erase" to remove the saved Access Token;\n 5. Type "exit" to exit the program\n> ',
     'wrong_url_or_res': 'The URL/Resources Item you inputted is wrong, please input again',
     'is_bookmark': 'Need you add bookmarks to this resources?',
     'file_path_is': 'File has been downloaded in',
     'following_failure': 'The following files failed to be download',
     'copy_code_guide': 'Login in [link=https://auth.smartedu.cn/uias/login]https://auth.smartedu.cn/uias/login[/link] in your browser, input the above code to your browser Console, and paste the Access Token you got here.',
-    'get_res_list_failure': 'Failed to get the resources list, please restart this program.'
+    'get_res_list_failure': 'Failed to get the resources list, please restart this program.',
+    'ready_to_erase': 'Are you sure that you want to remove the Access Token? ',
+    'erase_success': 'Removed Access Token successfully.',
 }
 os_name = platform.system()
 task = None
@@ -552,7 +556,7 @@ def exit_effection():
     is_ran_exit_effection = True
     sys.exit(0)
 
-def set_token_guide():
+def set_token_guide() -> None:
     js_code = """
     (function() {
         const authKey = Object.keys(localStorage).find(key => key.startsWith("ND_UC_AUTH"));
@@ -572,6 +576,13 @@ def set_token_guide():
     while token == '':
         token = input('> ').strip()
     print_info(set_access_token(token))
+
+def clean_token_guide() -> None:
+    is_clean = Confirm.ask(texts['ready_to_erase'], default=False)
+    if is_clean:
+        set_access_token('')
+        print(texts['erase_success'])
+
 
 # 获取资源列表
 try:
@@ -614,22 +625,31 @@ def get_parse_result_from_input() -> tuple[str, str, str] | tuple[None, None, No
             elif result == 'set':
                 set_token_guide() 
                 return get_parse_result_from_input()
+            elif result == 'erase':
+                clean_token_guide()
+                return get_parse_result_from_input()
             elif is_first_input:
                 print_error_info(texts['wrong_url_or_res'])
                 continue
             else: # 前几次选择了资源，而这一次输入错误，静默重输
                 continue
         is_first_input = False
-    is_bookmark = Confirm.ask(texts['is_bookmark'], default=True)
+    is_bookmark = Confirm.ask(txts['is_bookmark'], default=True)
     return parse(url, is_bookmark)
 
 try:
     while True:
-        res_data = get_parse_result_from_input()
-        progress.start()
-        task = progress.add_task("[green]Downloading...", total=100)
-        download_file(url=res_data[0], save_path=f'{os.path.expanduser("~")}/Downloads/{res_data[1]}.pdf', chapters=res_data[2])
-        progress.stop()
+        res_data_list = get_parse_result_from_input()
+        for res_data in res_data_list:
+            title = res_data[0]
+            res_url = res_data[1]
+            fmt = res_data[2]
+            chapters = res_data[3]
+            breakpoint()
+            progress.start()
+            task = progress.add_task("[green]Downloading...", total=100)
+            download_file(url=res_url, save_path=f'{os.path.expanduser("~")}/Downloads/{title}.{fmt}', chapters=chapters)
+            progress.stop()
 except BaseException as e:
-    exit_effection()
     print_error(e)
+    exit_effection()
