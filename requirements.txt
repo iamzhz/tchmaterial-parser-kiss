@@ -1,6 +1,4 @@
-Pillow
-psutil
 pypdf
-pyperclip
-pywin32; sys_platform == "win32"
 requests
+prompt_toolkit
+rich
