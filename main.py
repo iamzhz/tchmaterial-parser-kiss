@@ -1,14 +1,13 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
-tchmaterial-parser-kiss 是 tchMaterial-parser(4e53a3b5fa12584d0d5b2189792bb5576529e3fd) 的 fork
+tchmaterial-parser-kiss 是 tchMaterial-parser (4e53a3b5fa12584d0d5b2189792bb5576529e3fd) 的 fork
 原项目 URL: https://github.com/happycola233/tchMaterial-parser
 原项目贡献者: 晨叶梦春(https://github.com/wuziqian211)
               肥宅水水呀(https://github.com/happycola233)
-              以及 https://github.com/happycola233/tchMaterial-parser/graphs/contributors 中的用户
+              以及 https://github.com/happycola233/tchmaterial-parser-kiss/graphs/contributors 中的用户
 """
-import os
-import sys
+import os, sys, platform
 import base64, json, re, requests
 import traceback
 from pypdf import PdfReader, PdfWriter
@@ -17,18 +16,46 @@ from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.shortcuts import CompleteStyle
 from rich.prompt import Confirm
 from rich.progress import Progress
+from rich import print as rprint
+from rich.console import Console
+from rich.syntax import Syntax
+from rich.rule import Rule
 
-os_name = os.name
+texts = {
+    'add_item': '在输入区内，你可以\n 1. 直接写下需要解析的 URL; \n 2. 按 Tab 键搜索资源(Enter 键选中)\n 3. 输入 set 来设置 Access Token\n 4. 输入 exit 退出\n> ',
+    'wrong_url_or_res': '输入的不是正确的 URL/资源项, 请重新输入',
+    'is_bookmark': '本资源需要添加书签吗？',
+    'file_path_is': '文件已下载到',
+    'following_failure': '以下文件下载失败',
+    'copy_code_guide': '请在用浏览器在 [link=https://auth.smartedu.cn/uias/login]https://auth.smartedu.cn/uias/login[/link] 登录，在控制台输入上面代码得到 Access Token，粘贴到这里',
+    'get_res_list_failure': '获取资源列表失败，请重新打开本程序',
+}
+texts_en = {
+    'add_item': 'In the input field, you can\n 1. Directly type the URL to be parsed;\n 2. Press Tab to search for resources (press Enter to select);\n 3. Type "set" to set the Access Token;\n 4. Type "exit" to exit the program\n> ',
+    'wrong_url_or_res': 'The URL/Resources Item you inputted is wrong, please input again',
+    'is_bookmark': 'Need you add bookmarks to this resources?',
+    'file_path_is': 'File has been downloaded in',
+    'following_failure': 'The following files failed to be download',
+    'copy_code_guide': 'Login in [link=https://auth.smartedu.cn/uias/login]https://auth.smartedu.cn/uias/login[/link] in your browser, input the above code to your browser Console, and paste the Access Token you got here.',
+    'get_res_list_failure': 'Failed to get the resources list, please restart this program.'
+}
+os_name = platform.system()
 task = None
+is_debug = False
 progress = Progress()
 
+try:
+    import winreg
+except Exception as e:
+    winreg = None
+
 def print_error(e: Exception) -> None: # 打印错误信息到控制台
-    if sys.stderr: # 无控制台运行时 sys.stderr 可能为 None
+    if sys.stderr and is_debug: # 无控制台运行时 sys.stderr 可能为 None，仅 debug 模式显示
         traceback.print_exception(e)
 def print_error_info(info: str) -> None:
-    print(info)
+    rprint(f"[red]{info}[/red]")
 def print_info(info: str) -> None:
-    print(info)
+    rprint(f"[green]{info}[/green]")
 
 def parse(url: str, bookmarks: bool) -> tuple[str, str, list[dict]] | tuple[None, None, None]: # 解析资源，获取资源下载链接
     try:
@@ -222,16 +249,9 @@ def download_file(url: str, save_path: str, chapters: list[dict] | None = None) 
                 f"{state['download_url']}\n{state['failed_reason']}"
                 for state in failed_states
             )
-            print_error_info(f"文件已下载到：{os.path.dirname(save_path)}\n以下文件下载失败：\n{failed_message}")
+            print_error_info(f"{texts['file_path_is']}: {os.path.dirname(save_path)}\n{texts['following_failure']}: \n{failed_message}")
         else:
-            print_info(f"文件已下载到：{os.path.dirname(save_path)}")
-
-def format_bytes(size: float) -> str: # 将数据单位进行格式化，返回以 KB、MB、GB、TB、PB 为单位的数据大小
-    for x in ["字节", "KB", "MB", "GB", "TB"]:
-        if size < 1024.0:
-            return f"{size:3.1f} {x}"
-        size /= 1024.0
-    return f"{size:3.1f} PB"
+            print_info(f"{texts['file_path_is']}: {os.path.dirname(save_path)}")
 
 def add_bookmarks(pdf_path: str, chapters: list[dict]) -> None: # 给 PDF 添加书签
     try:
@@ -275,45 +295,25 @@ def add_bookmarks(pdf_path: str, chapters: list[dict]) -> None: # 给 PDF 添加
     except Exception as e:
         print_error(e)
 
-"""\
-国家中小学智慧教育平台需要登录后才可获取教材，因此要使用本程序下载教材，您需要在平台内登录账号（如没有需注册），然后获得登录凭据（Access Token）。本程序仅保存该凭据至本地。
-
-获取方法如下：
-1. 打开浏览器，访问国家中小学智慧教育平台（https://auth.smartedu.cn/uias/login）并登录账号。
-2. 按下 F12 或 Ctrl+Shift+I，或右键——检查（审查元素）打开开发者工具，选择控制台（Console）。
-3. 在控制台粘贴以下代码后回车（Enter）：
----------------------------------------------------------
-(function() {
-    const authKey = Object.keys(localStorage).find(key => key.startsWith("ND_UC_AUTH"));
-    if (!authKey) {
-        console.error("未找到 Access Token，请确保已登录！");
-        return;
-    }
-    const tokenData = JSON.parse(localStorage.getItem(authKey));
-    const accessToken = JSON.parse(tokenData.value).access_token;
-    console.log("%cAccess Token:", "color: green; font-weight: bold", accessToken);
-})();
----------------------------------------------------------
-然后在控制台输出中即可看到 Access Token。将其复制后粘贴到本程序中。"""
 def load_access_token() -> None: # 读取本地存储的 Access Token
     global access_token
     try:
         if os_name == "Windows": # 在 Windows 上，从注册表读取
             if not winreg:
                 return
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\tchMaterial-parser", 0, winreg.KEY_READ) as key:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\tchmaterial-parser-kiss", 0, winreg.KEY_READ) as key:
                 token, _ = winreg.QueryValueEx(key, "AccessToken")
                 if token:
                     access_token = token
                     # 更新请求头
                     headers["Authorization"] = f"Bearer {access_token}"
                     headers["X-ND-AUTH"] = f'MAC id="{access_token}",nonce="0",mac="0"'
-        elif os_name == "Linux": # 在 Linux 上，从 ~/.config/tchMaterial-parser/data.json 文件读取
+        elif os_name == "Linux": # 在 Linux 上，从 ~/.config/tchmaterial-parser-kiss/data.json 文件读取
             # 构建文件路径
             target_file = os.path.join(
                 os.path.expanduser("~"), # 获取当前用户主目录
                 ".config",
-                "tchMaterial-parser",
+                "tchmaterial-parser-kiss",
                 "data.json"
             )
             if not os.path.exists(target_file): # 文件不存在则不做处理
@@ -324,12 +324,12 @@ def load_access_token() -> None: # 读取本地存储的 Access Token
                 data = json.load(f)
             # 提取 access_token 字段
             access_token = data["access_token"]
-        elif os_name == "Darwin": # 在 macOS 上，从 ~/Library/Application Support/tchMaterial-parser/data.json 文件读取
+        elif os_name == "Darwin": # 在 macOS 上，从 ~/Library/Application Support/tchmaterial-parser-kiss/data.json 文件读取
             target_file = os.path.join(
                 os.path.expanduser("~"),
                 "Library",
                 "Application Support",
-                "tchMaterial-parser",
+                "tchmaterial-parser-kiss",
                 "data.json"
             )
             if not os.path.exists(target_file):
@@ -352,15 +352,15 @@ def set_access_token(token: str) -> str: # 设置并更新 Access Token
         if os_name == "Windows": # 在 Windows 上，将 Access Token 写入注册表
             if not winreg:
                 return "Access Token 已保存！"
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, "Software\\tchMaterial-parser") as key:
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, "Software\\tchmaterial-parser-kiss") as key:
                 winreg.SetValueEx(key, "AccessToken", 0, winreg.REG_SZ, token)
-            return "Access Token 已保存！\n已写入注册表：HKEY_CURRENT_USER\\Software\\tchMaterial-parser\\AccessToken"
-        elif os_name == "Linux": # 在 Linux 上，将 Access Token 保存至 ~/.config/tchMaterial-parser/data.json 文件中
+            return "Access Token 已保存！\n已写入注册表：HKEY_CURRENT_USER\\Software\\tchmaterial-parser-kiss\\AccessToken"
+        elif os_name == "Linux": # 在 Linux 上，将 Access Token 保存至 ~/.config/tchmaterial-parser-kiss/data.json 文件中
             # 构建目标目录和文件路径
             target_dir = os.path.join(
                 os.path.expanduser("~"),
                 ".config",
-                "tchMaterial-parser"
+                "tchmaterial-parser-kiss"
             )
             target_file = os.path.join(target_dir, "data.json")
             # 创建目录（如果不存在）
@@ -372,13 +372,13 @@ def set_access_token(token: str) -> str: # 设置并更新 Access Token
             with open(target_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
 
-            return "Access Token 已保存！\n已写入文件：~/.config/tchMaterial-parser/data.json"
-        elif os_name == "Darwin": # 在 macOS 上，将 Access Token 保存至 ~/Library/Application Support/tchMaterial-parser/data.json 文件中
+            return "Access Token 已保存！\n已写入文件：~/.config/tchmaterial-parser-kiss/data.json"
+        elif os_name == "Darwin": # 在 macOS 上，将 Access Token 保存至 ~/Library/Application Support/tchmaterial-parser-kiss/data.json 文件中
             target_dir = os.path.join(
                 os.path.expanduser("~"),
                 "Library",
                 "Application Support",
-                "tchMaterial-parser"
+                "tchmaterial-parser-kiss"
             )
             target_file = os.path.join(target_dir, "data.json")
             os.makedirs(target_dir, exist_ok=True)
@@ -387,7 +387,7 @@ def set_access_token(token: str) -> str: # 设置并更新 Access Token
             with open(target_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
 
-            return "Access Token 已保存！\n已写入文件：~/Library/Application Support/tchMaterial-parser/data.json"
+            return "Access Token 已保存！\n已写入文件：~/Library/Application Support/tchmaterial-parser-kiss/data.json"
         else:
             return "Access Token 已保存！\n本工具尚未支持该操作系统下 Access Token 的持久化，下次启动时仍需手动输入 Access Token。"
 
@@ -484,79 +484,64 @@ class resource_helper: # 获取网站上资源的数据
         # lesson_hier = self.fetch_lesson_list()
         return { **book_hier }
 
-def thread_it(func: callable, *args: tuple, **kwargs: dict) -> None: # 打包函数到线程
-    t = threading.Thread(target=func, args=args, kwargs=kwargs)
-    t.daemon = True
-    t.start()
-
 session = requests.Session() # 初始化请求
 download_states: list[dict] = [] # 初始化下载状态
-app_closing = False
 access_token: str | None = None
 headers = { "Authorization": "Bearer 0", "X-ND-AUTH": 'MAC id="0",nonce="0",mac="0"' } # 设置请求头部，包含认证信息，其中 “MAC id” 即为 Access Token，“nonce” 和 “mac” 不可缺省但可为任意非空值
 session.proxies = {} # 全局忽略代理
 
-scale: float | None = None
-
 # 尝试加载已保存的 Access Token
 load_access_token()
 
-# 获取资源列表
-try:
-    resource_list = resource_helper().fetch_resource_list()
-except Exception as e:
-    print_error(e)
-    resource_list = {}
-    messagebox.showwarning("警告", "获取资源列表失败，请手动填写资源链接，或重新打开本程序") # 弹出警告窗口
-
-# GUI
-
-def on_closing() -> None: # 处理窗口关闭事件
-    global app_closing
-
-    if app_closing:
-        return
-
-    if not all(state["finished"] for state in download_states): # 当正在下载时，询问用户
-        if not messagebox.askokcancel("提示", "下载任务未完成，是否退出？"):
-            return
-
-    app_closing = True
-
-    current_process = psutil.Process(os.getpid()) # 获取自身的进程 ID
-    child_processes = current_process.children(recursive=True) # 获取自身的所有子进程
-
-    for child in child_processes: # 结束所有子进程
-        try:
-            child.terminate() # 结束进程
-        except Exception: # 进程可能已经结束
-            pass
-
-    try:
-        root.destroy()
-    except Exception:
-        pass
 
 # 
-texts = {
-      'add_item': '你可以直接写下需要解析的 URL，或者按 Tab 键搜索资源(Enter 键选中)\n> ',
-      'wrong_url_or_res': '输入的不是正确的 URL/资源项, 请重新输入',
-      'is_bookmark': '本资源需要添加书签吗？',
-}
-texts_en = {
-      'add_item': 'Input your URL directly, or press Tab key to search resources (and press Enter key to select it)\n> ',
-      'wrong_url_or_res': 'The URL/Resources Item you inputted is wrong, please input again',
-      'is_bookmark': 'Need you add bookmarks to this resources?',
-}
 if '--ensure-en' in sys.argv:
     texts = texts_en
+if '--debug' in sys.argv:
+    is_debug = True
 
-# resource list
-root_dict = resource_helper().fetch_resource_list()
+is_ran_exit_effection = False
+def exit_effection():
+    global is_ran_exit_effection
+    if not is_ran_exit_effection:
+        rprint(Rule(style='white')) # 分界线
+    is_ran_exit_effection = True
+    sys.exit(0)
+
+def set_token_guide():
+    js_code = """
+    (function() {
+        const authKey = Object.keys(localStorage).find(key => key.startsWith("ND_UC_AUTH"));
+        if (!authKey) {
+            console.error("未找到 Access Token，请确保已登录！");
+            return;
+        }
+        const tokenData = JSON.parse(localStorage.getItem(authKey));
+        const accessToken = JSON.parse(tokenData.value).access_token;
+        console.log("%cAccess Token:", "color: green; font-weight: bold", accessToken);
+    })();
+    """
+    syntax = Syntax(js_code, "javascript", theme="monokai", line_numbers=False)
+    rprint(syntax)
+    rprint(texts['copy_code_guide'])
+    token = input().strip()
+    while token == '':
+        token = input().strip()
+    print_info(set_access_token(token))
+
+# 获取资源列表
+try:
+    resource_dict = resource_helper().fetch_resource_list()
+except Exception as e:
+    print_error(e)
+    resource_dict = {}
+    print_error_info(texts['get_res_list_failure'])
+
 def get_parse_result_from_input() -> tuple[str, str, str] | tuple[None, None, None]:
-    chosen_dict = {'children': root_dict}
+    chosen_dict = {'children': resource_dict}
     is_first_input = True
     url = ''
+    rprint(Rule(style='white')) # 分界线
     while True:
         if 'children' in chosen_dict: # 不是末端节点
             options_dict = {option_data.get('display_name').strip(): option_id for option_id, option_data in chosen_dict['children'].items()}
@@ -577,6 +562,12 @@ def get_parse_result_from_input() -> tuple[str, str, str] | tuple[None, None, No
         else:
             if 'basic.smartedu.cn' in result: # 可能是正确的 URL
                 url = result
+                break
+            elif result == 'exit':
+                exit_effection()
+            elif result == 'set':
+                set_token_guide() 
+                return get_parse_result_from_input()
             elif is_first_input:
                 print_error_info(texts['wrong_url_or_res'])
                 continue
@@ -585,9 +576,13 @@ def get_parse_result_from_input() -> tuple[str, str, str] | tuple[None, None, No
         is_first_input = False
     is_bookmark = Confirm.ask(texts['is_bookmark'], default=True)
     return parse(url, is_bookmark)
-res_data = get_parse_result_from_input()
-progress.start()
-task = progress.add_task("[green]Downloading...", total=100)
-download_file(url=res_data[0], save_path=f'{os.path.expanduser("~")}/Downloads/{res_data[1]}.pdf', chapters=res_data[2])
-progress.stop()
 
+try:
+    res_data = get_parse_result_from_input()
+    progress.start()
+    task = progress.add_task("[green]Downloading...", total=100)
+    download_file(url=res_data[0], save_path=f'{os.path.expanduser("~")}/Downloads/{res_data[1]}.pdf', chapters=res_data[2])
+    progress.stop()
+except BaseException as e:
+    exit_effection()
+    print_error(e)
