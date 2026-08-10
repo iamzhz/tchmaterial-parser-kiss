@@ -125,7 +125,7 @@ def parse(url: str, bookmarks: bool) -> list[tuple[str, str, str, list[dict]]] |
         data: dict = response.json()
 
         # 3. 获取资源标题、下载链接及章节目录
-        def get_resource_info(resource_data) -> tuple[str, str, str, list[dict]] | None:
+        def get_resource_info(resource_data: dict) -> tuple[str, str, str, list[dict]] | None:
             title: str = resource_data.get("title")
             resource_url: str | None = None
 
@@ -245,7 +245,7 @@ def download_file(url: str, save_path: str, chapters: list[dict] | None = None) 
 
         if not response.ok: # 服务器返回表示错误的 HTTP 状态码
             current_state["finished"] = True
-            current_state["failed_reason"] = f"服务器返回 HTTP 状态码 {response.status_code}" + "，Access Token 可能已过期或无效，请重新设置" if response.status_code == 401 or response.status_code == 403 else ""
+            current_state["failed_reason"] = f"服务器返回 HTTP 状态码 {response.status_code}" + ("，Access Token 可能已过期或无效，请重新设置" if response.status_code in (401, 403) else "")
         else:
             temp_path = f"{save_path}.tmp"
             current_state["total_size"] = int(response.headers.get("Content-Length", 0))
@@ -437,7 +437,7 @@ def set_access_token(token: str) -> str: # 设置并更新 Access Token
         print_error(e)
         return "Access Token 已保存！\n因出现错误而无法持久化，下次启动时仍需手动输入 Access Token。"
 
-class resource_helper: # 获取网站上资源的数据
+class ResourceHelper: # 获取网站上资源的数据
     def parse_hierarchy(self, hierarchy: list) -> dict: # 解析层级数据
         if not hierarchy: # 如果没有层级数据，返回空字典
             return {}
