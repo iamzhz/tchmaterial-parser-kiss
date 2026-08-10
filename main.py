@@ -74,13 +74,26 @@ def parse(url: str, bookmarks: bool) -> list[tuple[str, str, str, list[dict]]] |
 
         if "contentId" in params:
             content_id = params["contentId"][0]
+        elif re.search(r"^https?://([^/]+)/syncClassroom/classActivity", url): # 课程资源
+            content_type = "national_lesson"
+            if "activityId" in params:
+                content_id = params["activityId"][0]
+            else:
+                return None
+        elif re.search(r"^https?://([^/]+)/qualityCourse", url): # 精品课
+            content_type = "quality_course"
+            if "courseId" in params:
+                content_id = params["courseId"][0]
+            else:
+                return None
         else:
             return None
 
-        if "contentType" in params:
-            content_type = params["contentType"][0]
-        else:
-            content_type = "assets_document"
+        if not content_type:
+            if "contentType" in params:
+                content_type = params["contentType"][0]
+            else:
+                content_type = "assets_document"
 
         # 2. 获取资源的信息
         # 返回数据示例：
@@ -115,19 +128,20 @@ def parse(url: str, bookmarks: bool) -> list[tuple[str, str, str, list[dict]]] |
         """
         # 其中 $.ti_items 的每一项对应一个资源
 
-        if re.search(r"^https?://([^/]+)/syncClassroom/basicWork/detail", url): # 对基础性作业的解析
+        if re.search(r"^https?://([^/]+)/tchMaterial/detail", url) and content_type == "assets_document": # 对普通电子课本的解析
+            response = session.get(f"https://s-file-1.ykt.cbern.com.cn/zxx/ndrv2/resources/tch_material/details/{content_id}.json")
+        elif content_type == "national_lesson": # 对课程资源的解析
+            response = session.get(f"https://s-file-1.ykt.cbern.com.cn/zxx/ndrv2/national_lesson/resources/details/{content_id}.json")
+        elif content_type == "quality_course": # 对精品课的解析
+            response = session.get(f"https://s-file-1.ykt.cbern.com.cn/zxx/ndrv2/resources/{content_id}.json")
+        else: # 对专题课程（含电子课本、视频等）、其他类型资源的解析
             response = session.get(f"https://s-file-1.ykt.cbern.com.cn/zxx/ndrs/special_edu/resources/details/{content_id}.json")
-        else: # 对课本的解析
-            if content_type == "thematic_course": # 对专题课程（含电子课本、视频等）的解析
-                response = session.get(f"https://s-file-1.ykt.cbern.com.cn/zxx/ndrs/special_edu/resources/details/{content_id}.json")
-            else: # 对普通电子课本的解析
-                response = session.get(f"https://s-file-1.ykt.cbern.com.cn/zxx/ndrv2/resources/tch_material/details/{content_id}.json")
 
         data: dict = response.json()
 
         # 3. 获取资源标题、下载链接及章节目录
-        def get_resource_info(resource_data: dict) -> tuple[str, str, str, list[dict]] | None:
-            title: str = resource_data.get("title")
+        def get_resource_info(resource_data: dict, root_title: str | None = None) -> tuple[str, str, str, list[dict]] | None:
+            title: str = f"{root_title} - {resource_data.get('title') or resource_data.get('id')}" if root_title else resource_data.get("title") or resource_data.get("id")
             resource_url: str | None = None
             resource_format = "pdf"
 
@@ -147,6 +161,24 @@ def parse(url: str, bookmarks: bool) -> list[tuple[str, str, str, list[dict]]] |
                     if not resource_url:
                         continue
                 break
+
+            if not resource_url: # 使用不同的判断条件寻找源文件
+                for item in resource_data["ti_items"]:
+                    if not item["ti_file_flag"] in ("source", "pdf"):
+                        continue
+
+                    resource_format = item.get("ti_format") or "pdf"
+                    if resource_format == "folder":
+                      continue
+
+                    resource_url = item.get("ti_storage")
+                    if resource_url:
+                        resource_url = resource_url.replace("cs_path:${ref-path}", "https://r1-ndr-private.ykt.cbern.com.cn")
+                    else:
+                        resource_url = next((url for url in item["ti_storages"] if url), None)
+                        if not resource_url:
+                            continue
+                    break
 
             if not resource_url:
                 return None
@@ -222,17 +254,27 @@ def parse(url: str, bookmarks: bool) -> list[tuple[str, str, str, list[dict]]] |
 
             return title, resource_url, resource_format, chapters
 
-        resource_info = get_resource_info(data)
-        if resource_info:
-            resources_info.append(resource_info)
-
         if content_type == "thematic_course": # 专题课程
             resources_resp = session.get(f"https://s-file-1.ykt.cbern.com.cn/zxx/ndrs/special_edu/thematic_course/{content_id}/resources/list.json")
             resources_data: list[dict] = resources_resp.json()
             for resource in resources_data:
-                resource_info = get_resource_info(resource)
+                resource_info = get_resource_info(resource, data["title"])
                 if resource_info:
                     resources_info.append(resource_info)
+        elif content_type == "national_lesson": # 课程资源
+            for resource in data["relations"]["national_course_resource"]:
+                resource_info = get_resource_info(resource, data["title"])
+                if resource_info:
+                    resources_info.append(resource_info)
+        elif content_type == "quality_course": # 精品课
+            for resource in data["relations"]["course_resource"]:
+                resource_info = get_resource_info(resource, data["title"])
+                if resource_info:
+                    resources_info.append(resource_info)
+        else: # 其他类型资源
+            resource_info = get_resource_info(data)
+            if resource_info:
+                resources_info.append(resource_info)
 
         return resources_info
 
@@ -478,18 +520,15 @@ class ResourceHelper: # 获取网站上资源的数据
             for book in book_data:
                 if book.get("tag_paths"): # 某些非课本资料的 tag_paths 属性为空数组
                     # 解析课本层级数据
-                    tag_paths: list[str] = book["tag_paths"][0].split("/")[2:] # 电子课本 tag_paths 的前两项为“教材”、“电子教材”
-
-                    # 如果课本层级数据不在层级数据中，跳过
-                    temp_hier = parsed_hier[book["tag_paths"][0].split("/")[1]]
-                    if not tag_paths[0] in temp_hier["children"]:
-                        continue
+                    tag_paths: list[str] = book["tag_paths"][0].split("/")
 
                     # 分别解析课本层级
-                    for p in tag_paths:
-                        if temp_hier["children"] and temp_hier["children"].get(p):
-                            temp_hier = temp_hier["children"].get(p)
-                    if not temp_hier["children"]:
+                    temp_hier = parsed_hier[tag_paths[1]]
+
+                    for p in tag_paths[2:]: # 电子课本 tag_paths 的前两项为 “教材”、“电子教材”
+                        if temp_hier.get("children") and temp_hier["children"].get(p):
+                            temp_hier = temp_hier["children"][p]
+                    if not temp_hier.get("children"):
                         temp_hier["children"] = {}
 
                     book["display_name"] = book["title"] if "title" in book else book["name"] if "name" in book else f"(未知电子课本 {book['id']})"
@@ -498,11 +537,11 @@ class ResourceHelper: # 获取网站上资源的数据
 
         return parsed_hier
 
-    def fetch_lesson_list(self) -> dict: # 获取课件列表
+def fetch_national_lesson_list(self) -> dict: # 获取自学课件列表
         # 获取课件层级数据
         tags_resp = session.get("https://s-file-1.ykt.cbern.com.cn/zxx/ndrs/tags/national_lesson_tag.json")
         tags_data: dict = tags_resp.json()
-        parsed_hier = self.parse_hierarchy([{ "children": [{ "tag_id": "__internal_national_lesson", "hierarchies": tags_data["hierarchies"], "tag_name": "课件资源" }] }])
+        parsed_hier = self.parse_hierarchy([{ "children": [{ "tag_id": "__internal_national_lesson", "hierarchies": tags_data["hierarchies"], "tag_name": "学生自主学习课件" }] }])
 
         # 获取课件 URL 列表
         list_resp = session.get("https://s-file-1.ykt.cbern.com.cn/zxx/ndrs/national_lesson/teachingmaterials/version/data_version.json")
@@ -520,12 +559,48 @@ class ResourceHelper: # 获取网站上资源的数据
                     # 分别解析课件层级（tag_paths 为乱序）
                     def parse_tag_path(hier: dict) -> dict:
                         for p in tag_paths:
-                            if hier["children"] and hier["children"].get(p):
-                                return parse_tag_path(hier["children"].get(p))
+                            if hier.get("children") and hier["children"].get(p):
+                                return parse_tag_path(hier["children"][p])
                         return hier
 
                     hier = parse_tag_path(parsed_hier["__internal_national_lesson"])
-                    if not hier["children"]:
+                    if not hier.get("children"):
+                        hier["children"] = {}
+
+                    lesson["display_name"] = lesson["title"] if "title" in lesson else lesson["name"] if "name" in lesson else f"(未知课件 {lesson['id']})"
+
+                    hier["children"][lesson["id"]] = lesson
+
+        return parsed_hier
+
+    def fetch_prepare_lesson_list(self) -> dict: # 获取备课课件列表
+        # 获取课件层级数据
+        tags_resp = session.get("https://s-file-2.ykt.cbern.com.cn/zxx/ndrs/tags/k12.json")
+        tags_data: dict = tags_resp.json()
+        parsed_hier = self.parse_hierarchy([{ "children": [{ "tag_id": "__internal_prepare_lesson", "hierarchies": tags_data["hierarchies"], "tag_name": "教师备课授课课件" }] }])
+
+        # 获取课件 URL 列表
+        list_resp = session.get("https://s-file-2.ykt.cbern.com.cn/zxx/ndrs/prepare_lesson/teachingmaterials/parts.json")
+        list_data: list[str] = list_resp.json()
+
+        # 获取课件列表
+        for url in list_data:
+            lesson_resp = session.get(url)
+            lesson_data: list[dict] = lesson_resp.json()
+            for lesson in lesson_data:
+                if lesson.get("tag_list"):
+                    # 解析课件层级数据
+                    tag_paths: list[str] = [tag["tag_id"] for tag in sorted(lesson["tag_list"], key=lambda tag: tag["order_num"])]
+
+                    # 分别解析课件层级（tag_paths 为乱序）
+                    def parse_tag_path(hier: dict) -> dict:
+                        for p in tag_paths:
+                            if hier.get("children") and hier["children"].get(p):
+                                return parse_tag_path(hier["children"][p])
+                        return hier
+
+                    hier = parse_tag_path(parsed_hier["__internal_prepare_lesson"])
+                    if not hier.get("children"):
                         hier["children"] = {}
 
                     lesson["display_name"] = lesson["title"] if "title" in lesson else lesson["name"] if "name" in lesson else f"(未知课件 {lesson['id']})"
@@ -536,7 +611,8 @@ class ResourceHelper: # 获取网站上资源的数据
 
     def fetch_resource_list(self) -> dict: # 获取资源列表
         book_hier = self.fetch_book_list()
-        # lesson_hier = self.fetch_lesson_list()
+        # national_lesson_hier = self.fetch_national_lesson_list()
+        # prepare_lesson_hier = self.fetch_prepare_lesson_list()
         return { **book_hier }
 
 session = requests.Session() # 初始化请求
@@ -618,8 +694,9 @@ def get_parse_result_from_input() -> tuple[str, str, str] | tuple[None, None, No
             resource_data = chosen_dict
             resource_type = resource_data.get("resource_type_code") or "assets_document"
             content_id = resource_data.get("id")
+            root_id = items[0]
             if resource_type == "teachingmaterials":
-                url = f"https://basic.smartedu.cn/syncClassroom?defaultTag={"%2F".join(items)}"
+                url = f"https://basic.smartedu.cn/syncClassroom{'/prepare' if root_id == '__internal_prepare_lesson' else ''}?defaultTag={'%2F'.join(items[1:])}"
             else:
                 url = f"https://basic.smartedu.cn/tchMaterial/detail?contentType={resource_type}&contentId={content_id}&catalogType=tchMaterial&subCatalog=tchMaterial"
             break
