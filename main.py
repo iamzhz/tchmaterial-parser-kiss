@@ -634,7 +634,7 @@ def get_parse_result_from_input() -> tuple[str, str, str] | tuple[None, None, No
             else: # 前几次选择了资源，而这一次输入错误，静默重输
                 continue
         is_first_input = False
-    is_bookmark = Confirm.ask(txts['is_bookmark'], default=True)
+    is_bookmark = Confirm.ask(texts['is_bookmark'], default=True)
     return parse(url, is_bookmark)
 
 try:
@@ -645,7 +645,6 @@ try:
             res_url = res_data[1]
             fmt = res_data[2]
             chapters = res_data[3]
-            breakpoint()
             progress.start()
             task = progress.add_task("[green]Downloading...", total=100)
             download_file(url=res_url, save_path=f'{os.path.expanduser("~")}/Downloads/{title}.{fmt}', chapters=chapters)
