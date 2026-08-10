@@ -270,13 +270,21 @@ def download_file(url: str, save_path: str, chapters: list[dict] | None = None) 
                         download_progress = (all_downloaded_size / all_total_size) * 100
                         progress.update(task, completed=download_progress) # 更新进度条
 
-            current_state["downloaded_size"] = current_state["total_size"]
+            if current_state["total_size"] > 0 and current_state["downloaded_size"] != current_state["total_size"]: # 文件下载不完整
+                current_state["failed_reason"] = f"文件下载不完整，需下载 {current_state["total_size"]} 字节，实际下载 {current_state["downloaded_size"]} 字节"
+                current_state["downloaded_size"], current_state["total_size"] = 0, 0
+                current_state["finished"] = True
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+            else:
+                if chapters: # 添加书签
+                    ui_call(progress_label.config, text="添加书签")
+                    add_bookmarks(temp_path, chapters)
 
-            if chapters: # 添加书签
-                add_bookmarks(temp_path, chapters)
-
-            os.replace(temp_path, save_path) # 重命名临时文件为目标文件
-            current_state["finished"] = True
+                os.replace(temp_path, save_path) # 重命名临时文件为目标文件
+                current_state["finished"] = True
 
     except Exception as e:
         print_error(e)
