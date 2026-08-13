@@ -26,6 +26,7 @@ texts = {
     'add_item': '在输入区内，你可以\n 1. 直接写下需要解析的 URL; \n 2. 按 Tab 键搜索资源(Enter 键选中)\n 3. 输入 set 来设置 Access Token\n 4. 输入 erase 清除保存的 Access Token\n 5. 输入 exit 退出\n> ',
     'wrong_url_or_res': '输入的不是正确的 URL/资源项, 请重新输入',
     'is_bookmark': '本资源需要添加书签吗？',
+    'adding_bookmark': '正在添加书签...',
     'file_path_is': '文件已下载到',
     'following_failure': '以下文件下载失败',
     'copy_code_guide': '请在用浏览器在 [link=https://auth.smartedu.cn/uias/login]https://auth.smartedu.cn/uias/login[/link] 登录，在控制台输入上面代码得到 Access Token，粘贴到这里',
@@ -37,6 +38,7 @@ texts_en = {
     'add_item': 'In the input field, you can\n 1. Directly type the URL to be parsed;\n 2. Press Tab to search for resources (press Enter to select);\n 3. Type "set" to set the Access Token;\n 4. Type "erase" to remove the saved Access Token;\n 5. Type "exit" to exit the program\n> ',
     'wrong_url_or_res': 'The URL/Resources Item you inputted is wrong, please input again',
     'is_bookmark': 'Need you add bookmarks to this resources?',
+    'adding_bookmark': 'Adding bookmarks...',
     'file_path_is': 'File has been downloaded in',
     'following_failure': 'The following files failed to be download',
     'copy_code_guide': 'Login in [link=https://auth.smartedu.cn/uias/login]https://auth.smartedu.cn/uias/login[/link] in your browser, input the above code to your browser Console, and paste the Access Token you got here.',
@@ -377,7 +379,7 @@ def download_file(url: str, save_path: str, chapters: list[dict] | None = None) 
                     pass
             else:
                 if chapters: # 添加书签
-                    ui_call(progress_label.config, text="添加书签")
+                    print_info(texts['adding_bookmark'])
                     add_bookmarks(temp_path, chapters)
 
                 os.replace(temp_path, save_path) # 重命名临时文件为目标文件
