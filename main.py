@@ -5,7 +5,7 @@ tchmaterial-parser-kiss 是 tchMaterial-parser (4e53a3b5fa12584d0d5b2189792bb557
 原项目 URL: https://github.com/happycola233/tchMaterial-parser
 原项目贡献者: 晨叶梦春(https://github.com/wuziqian211)
               肥宅水水呀(https://github.com/happycola233)
-              以及 https://github.com/happycola233/tchmaterial-parser-kiss/graphs/contributors 中的用户
+              以及 https://github.com/happycola233/tchMaterial-parser/graphs/contributors 中的用户
 """
 import os, sys, platform
 import base64, json, re, requests
