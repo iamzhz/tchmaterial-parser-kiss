@@ -594,7 +594,7 @@ class ResourceHelper: # 获取网站上资源的数据
 
         return parsed_hier
 
-def fetch_national_lesson_list(self) -> dict: # 获取自学课件列表
+    def fetch_national_lesson_list(self) -> dict: # 获取自学课件列表
         # 获取课件层级数据
         tags_resp = session.get("https://s-file-1.ykt.cbern.com.cn/zxx/ndrs/tags/national_lesson_tag.json")
         tags_data: dict = tags_resp.json()
